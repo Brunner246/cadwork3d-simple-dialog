@@ -1,0 +1,6 @@
+PyQt6>=6.5
+pytest>=7.0
+pytest-qt>=4.2
+
+# cwapi3d is not on PyPI — it ships with cadwork 3d and is resolved
+# at runtime by Python inside the cadwork process. Nothing to install.
