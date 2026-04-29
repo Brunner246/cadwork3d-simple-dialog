@@ -1,0 +1,39 @@
+[project]
+name = "caddialog"
+version = "0.1.0"
+description = "Minimal PyQt6 QWebEngineView + QWebChannel example for cadwork 3d, structured around a hexagonal architecture."
+requires-python = ">=3.14"
+readme = "README.md"
+
+dependencies = []
+
+[dependency-groups]
+# cadwork already provides PyQt6, Qt6Core, the WebEngine runtime, and
+# the cwapi3d native modules -- only the PyQt6-WebEngine *bindings*
+# need to be overlaid. Install with `--no-deps` so the resolver does
+# not pull a duplicate Qt runtime alongside cadwork's.
+# uv sync --no-default-groups --group prod
+prod = [
+    "PyQt6-WebEngine>=6.8,<6.9",
+]
+
+# Development: laptop work without cadwork. Pulls in the full Qt +
+# WebEngine binary stack (PyQt6 + transitive PyQt6-Qt6 +
+# PyQt6-WebEngine-Qt6), cwapi3d stubs for autocomplete on a machine
+# that has no cadwork install, and pytest. Includes the prod group so
+# a single `uv sync` provisions everything into .venv.
+dev = [
+    {include-group = "prod"},
+    "PyQt6>=6.8,<6.9",
+    "cwapi3d>=32.443.8",
+    "pytest>=8.0",
+]
+
+[tool.uv]
+
+package = false
+
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

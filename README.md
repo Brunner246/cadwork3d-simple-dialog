@@ -1,114 +1,132 @@
-# CadDialog — PyQt6 MVVM reference for cwapi3d
+# CadDialog — PyQt6 QWebEngineView + QWebChannel for cadwork 3d
 
-A minimal, clean example of how to build a PyQt6 dialog for cadwork 3d v2026 (use PyQt5 for v2025 and below)
-using the Model–View–ViewModel pattern. It lists the currently active
-elements in cadwork and shows their name, type, and vertex count.
-Selecting a row sets those elements active in cadwork.
+> [!NOTE]
+> Cadwork v2025 uses Qt 5.15.10
 
-The point of the repo is not the feature. It's the **shape**: where
-cwapi3d calls live, how the UI stays free of business logic, and how
-the whole thing is testable without cadwork installed.
+A minimal example showing how to embed a webpage in a PyQt6 dialog and
+let the page drive cwapi3d. Two demo actions:
 
-## Architecture
+- **Get active element IDs** — calls `element_controller.get_active_identifiable_element_ids()`
+  and returns the list to the page (awaitable from JS).
+- **Zoom active** — calls `visualization_controller.zoom_active_elements()`
+  in cadwork 3d (fire-and-forget).
 
-```mermaid
-flowchart LR
-    View["CadDialog<br/>(View)"]
-    VM["CadViewModel"]
-    Service(["ElementService<br/>(Protocol)"])
-    Cadwork["CadworkElementService<br/>(wraps cwapi3d)"]
-    Fake["FakeElementService<br/>(tests / dev laptop)"]
+The code is organised around a hexagonal (ports & adapters) architecture so the
+seams between Qt, the domain, and cwapi3d are explicit and replaceable.
 
-    View -- "commands" --> VM
-    VM -- "signals" --> View
-    VM -- "calls" --> Service
-    Service -- "list[CadElement]" --> VM
-    Cadwork -. "implements" .-> Service
-    Fake -. "implements" .-> Service
-```
-
-Folder layout mirrors the three MVVM layers — dependency arrows always
-point inward (`ui/` → `models/`, `services/` → `models/`, never the reverse):
+## Hexagonal layout
 
 ```
 CadDialog/
-  CadDialog.py                           # entry point (plugin + standalone)
-  models/                                # domain layer — depends on nothing
-    cad_element.py                       #   @dataclass entity
-    element_service.py                   #   ElementService Protocol (contract)
-  services/                              # infrastructure — implementations
-    cadwork_element_service.py           #   the cwapi3d adapter (only file importing cwapi3d)
-    fake_element_service.py              #   dev/test stand-in
-  ui/                                    # presentation layer
-    cad_dialog.py                        #   View
-    cad_dialog.ui                        #   Qt Designer layout
-    cad_view_model.py                    #   ViewModel (state + signals + commands)
+  WebDialog.py                              composition root + entry points
+  domain/                                   pure Python -- no Qt, no cwapi3d
+    cadwork_port.py                           CadworkPort (Protocol) -- driven port
+    cadwork_service.py                        CadworkService -- application service (use cases)
+  adapters/
+    driving/                                primary adapters (drive the domain)
+      web_bridge.py                           QObject with @pyqtSlot, holds a CadworkService
+      web_dialog.py                           QDialog hosts QWebEngineView + WebBridge + QWebChannel
+    driven/                                 secondary adapters (driven by the domain)
+      cwapi3d_adapter.py                      production CadworkPort impl (cwapi3d)
+      fake_cadwork_adapter.py                 standalone CadworkPort impl (prints + canned data)
   tests/
-    test_cad_view_model.py
-  README.md
-  requirements.txt
+    test_cadwork_service.py                 exercises the seam with the fake adapter
+  assets/
+    index.html                              embedded page (replace with anything)
+  web/                                      optional React + Vite UI (alternative to assets/)
+    src/
+      main.tsx                                React 19 entry
+      App.tsx                                 element list + click-to-zoom
+      cadwork.ts                              typed QWebChannel bridge + useCadwork() hook
+      index.css
+    index.html                              Vite entry (loads /src/main.tsx)
+    vite.config.ts                          base: "./" so file:// loads work
+    package.json                            dev/build scripts
 ```
 
-- **Model** — [models/cad_element.py](models/cad_element.py) + [models/element_service.py](models/element_service.py):
-  the domain vocabulary. `CadElement` is a frozen `@dataclass`;
-  `ElementService` is a `Protocol` — the contract the ViewModel depends on.
-- **Services** — [services/cadwork_element_service.py](services/cadwork_element_service.py) + [services/fake_element_service.py](services/fake_element_service.py):
-  two concrete implementations of `ElementService`. The cadwork adapter
-  is the only file in the whole project that imports cwapi3d.
-- **ViewModel** — [ui/cad_view_model.py](ui/cad_view_model.py): holds
-  `elements` and `is_loading` state, exposes `load_elements()` and
-  `activate_elements()` as commands, emits `elementsChanged` / `loadingChanged` / `errorOccurred`.
-  No Qt widgets imported here — which is why it is unit-testable.
-- **View** — [ui/cad_dialog.py](ui/cad_dialog.py) + [ui/cad_dialog.ui](ui/cad_dialog.ui):
-  the `QDialog`. Loads the `.ui` file, forwards button clicks and row
-  selection to ViewModel commands, re-renders on ViewModel signals.
-  No cwapi3d imports here, no `CadElement` construction here.
+Dependency rule: `adapters/*` may import from `domain/*`; `domain/*`
+imports nothing from this project except other `domain/` modules. The
+domain has no Qt and no cwapi3d.
 
 ## Running
-
-### Inside cadwork 3d (plugin)
-
-cadwork owns the Qt event loop, so don't create a `QApplication`:
-
-```python
-from CadDialog import run_plugin
-dialog = run_plugin()
-```
 
 ### Standalone (dev laptop, no cadwork)
 
 ```
-pip install -r requirements.txt
-python CadDialog.py
+uv sync
+uv run python WebDialog.py
 ```
 
-Uses `FakeElementService`, so you can iterate on the UI without a
-cadwork install.
+The dialog opens on `assets/index.html`. Without cadwork, the bridge is
+backed by `FakeCadworkAdapter`.
+
+### Inside cadwork 3d
+
+cadwork owns the Qt event loop, so don't create a `QApplication`:
+
+```python
+from WebDialog import run_plugin
+dialog = run_plugin()
+```
+
+cadwork 2026 embeds its own Python 3.14 with PyQt6 already on the
+import path, **but the bundled PyQt6 has no `QtWebEngine*`.
+
+
+### React UI (Vite + TypeScript)
+
+The static `assets/index.html` is the default. A second, fully-equivalent
+UI lives under `web/` as a Vite + React + TypeScript project, talking
+to the same `WebBridge` over QWebChannel. `web/src/cadwork.ts` exposes a
+typed `getCadworkBridge()` promise and a `useCadwork()` React hook;
+`BuildingElement` is mirrored as a TS interface so the page never
+hand-rolls JSON shapes.
+
+Which UI `WebDialog` loads is controlled by the `CADWORK_UI` env var,
+resolved in `adapters/driving/web_dialog.py:_resolve_ui_url`:
+
+| `CADWORK_UI`               | UI loaded                            |
+|----------------------------|--------------------------------------|
+| unset / `static` (default) | `assets/index.html`                  |
+| `react`                    | `web/dist/index.html` (built bundle) |
+| `http://…` or `https://…`  | URL                                  |
+
+
+#### Install React dependencies:
+
+```
+cd web
+npm install
+```
+
+Requires Node.js ≥ 20.
+
+#### Production-style: build, then load from disk
+
+```powershell
+cd web; npm run build; cd ..
+$env:CADWORK_UI = "react"
+uv run python WebDialog.py
+```
+
+#### Dev with HMR (two terminals)
+
+Terminal 1 — Vite dev server:
+
+```
+cd web
+npm run dev
+```
+
+Terminal 2 — point `WebDialog` at the dev server:
+
+```powershell
+$env:CADWORK_UI = "http://127.0.0.1:5173"
+uv run python WebDialog.py
+```
 
 ### Tests
 
 ```
-pip install -r requirements.txt
-pytest
+uv run pytest
 ```
-
-The tests drive `CadViewModel` with a fake service and with a service
-that raises — no widgets, no cadwork, no event loop.
-
-## Adding a new cwapi3d feature
-
-Follow the arrows, never skip a layer:
-
-1. Add a method to the `ElementService` Protocol in
-   [models/element_service.py](models/element_service.py).
-2. Implement it in [services/cadwork_element_service.py](services/cadwork_element_service.py)
-   (real cwapi3d calls) and in [services/fake_element_service.py](services/fake_element_service.py)
-   (canned data for dev/tests).
-3. Add a command method and any new state/signals on
-   [ui/cad_view_model.py](ui/cad_view_model.py).
-4. Bind the command and signals in
-   [ui/cad_dialog.py](ui/cad_dialog.py).
-5. Add a test in [tests/](tests/) using a fake service.
-
-If a step feels awkward, it's usually a signal that a layer is doing
-the wrong job — resist the temptation to take a shortcut through it.
