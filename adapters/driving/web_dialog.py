@@ -12,9 +12,9 @@ from PyQt6.QtWidgets import QDialog, QVBoxLayout, QWidget
 
 from adapters.driving.web_bridge import WebBridge
 
-
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 _REACT_INDEX = _PROJECT_ROOT / "web" / "dist" / "index.html"
+_INDEX = _PROJECT_ROOT / "assets" / "index.html"
 
 
 def _resolve_ui_url() -> QUrl:
@@ -29,14 +29,20 @@ def _resolve_ui_url() -> QUrl:
     ui = os.environ.get("CADWORK_UI", "").strip()
     if ui.startswith(("http://", "https://")):
         return QUrl(ui)
-    if not _REACT_INDEX.is_file():
+    # if not _REACT_INDEX.is_file(): ...
+    #     raise FileNotFoundError(
+    #         f"{_REACT_INDEX} is missing -- run "
+    #         f"`npm install && npm run build` inside the web/ directory, "
+    #         f"or set CADWORK_UI to the dev server URL "
+    #         f"(e.g. http://127.0.0.1:5173/)."
+    #     )
+    # return QUrl.fromLocalFile(_REACT_INDEX)
+    if not _INDEX.is_file():
         raise FileNotFoundError(
-            f"{_REACT_INDEX} is missing -- run "
-            f"`npm install && npm run build` inside the web/ directory, "
-            f"or set CADWORK_UI to the dev server URL "
-            f"(e.g. http://127.0.0.1:5173/)."
+            f"{_INDEX} is missing -- run `npm install` inside the project root."
         )
-    return QUrl.fromLocalFile(str(_REACT_INDEX))
+    return QUrl.fromLocalFile(str(_INDEX))
+
 
 class WebDialog(QDialog):
     def __init__(self, bridge: WebBridge, parent: QWidget | None = None) -> None:
