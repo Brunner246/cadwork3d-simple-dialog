@@ -39,11 +39,12 @@ def _bootstrap_paths() -> None:
 
 _bootstrap_paths()
 
-from PyQt6.QtWidgets import QApplication, QWidget
+from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget
 from PyQt6.sip import voidptr
 
 from adapters.driving.web_bridge import WebBridge
-from adapters.driving.web_dialog import WebDialog
+from adapters.driving.web_dialog import WebDockWidget
 from domain.cadwork_port import CadworkPort
 from domain.cadwork_service import CadworkService
 
@@ -61,23 +62,39 @@ def _select_cadwork_port() -> CadworkPort:
     return Cwapi3dAdapter()
 
 
-def _build_dialog(port: CadworkPort, parent: QWidget | None = None) -> WebDialog:
+def _build_dock(port: CadworkPort, parent: QWidget | None = None) -> WebDockWidget:
     service = CadworkService(port)
     bridge = WebBridge(service)
-    return WebDialog(bridge, parent)
+    return WebDockWidget(bridge, parent)
 
 
-def run_plugin(parent: QWidget | None = None) -> WebDialog:
-    """Show the dialog inside cadwork 3d (cadwork owns the Qt event loop)."""
-    dialog = _build_dialog(_select_cadwork_port(), parent)
-    dialog.show()
-    return dialog
+def _find_main_window(widget: QWidget | None) -> QMainWindow | None:
+    while widget is not None:
+        if isinstance(widget, QMainWindow):
+            return widget
+        widget = widget.parentWidget()
+    return None
+
+
+def run_plugin(parent: QWidget | None = None) -> WebDockWidget:
+    """Dock into the host QMainWindow if one is reachable, else show floating."""
+    dock = _build_dock(_select_cadwork_port(), parent)
+    host = _find_main_window(parent)
+    if host is not None:
+        host.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+    dock.show()
+    return dock
 
 
 def _run_standalone() -> int:
     app = QApplication.instance() or QApplication(sys.argv)
-    dialog = _build_dialog(_select_cadwork_port())
-    dialog.show()
+    host = QMainWindow()
+    host.setWindowTitle("Cadwork WebView (standalone)")
+    host.resize(960, 600)
+    host.setCentralWidget(QWidget(host))
+    dock = _build_dock(_select_cadwork_port(), host)
+    host.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, dock)
+    host.show()
     return app.exec()
 
 

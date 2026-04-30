@@ -1,14 +1,14 @@
-"""Driving adapter -- QDialog hosting the QWebEngineView and bridge.
+"""Driving adapter -- QDockWidget hosting the QWebEngineView and bridge.
 """
 
 import os
 from pathlib import Path
 
-from PyQt6.QtCore import QFile, QIODevice, QUrl
+from PyQt6.QtCore import QFile, QIODevice, Qt, QUrl
 from PyQt6.QtWebChannel import QWebChannel
 from PyQt6.QtWebEngineCore import QWebEngineScript
 from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWidgets import QDialog, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QDockWidget, QWidget
 
 from adapters.driving.web_bridge import WebBridge
 
@@ -44,11 +44,16 @@ def _resolve_ui_url() -> QUrl:
     return QUrl.fromLocalFile(str(_INDEX))
 
 
-class WebDialog(QDialog):
+class WebDockWidget(QDockWidget):
     def __init__(self, bridge: WebBridge, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setWindowTitle("Cadwork WebView")
-        self.resize(720, 480)
+        super().__init__("Cadwork WebView", parent)
+        self.setObjectName("CadworkWebDockWidget")
+        self.setAllowedAreas(Qt.DockWidgetArea.AllDockWidgetAreas)
+        self.setFeatures(
+            QDockWidget.DockWidgetFeature.DockWidgetMovable
+            | QDockWidget.DockWidgetFeature.DockWidgetFloatable
+            | QDockWidget.DockWidgetFeature.DockWidgetClosable
+        )
 
         bridge.setParent(self)
         self._view = QWebEngineView(self)
@@ -57,9 +62,8 @@ class WebDialog(QDialog):
         self._view.page().setWebChannel(self._channel)
         self._inject_qwebchannel_js()
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._view)
+        self.setWidget(self._view)
+        self.resize(720, 480)
 
         self._view.load(_resolve_ui_url())
 
